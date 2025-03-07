@@ -1,5 +1,127 @@
 import cv2
 import numpy as np
+import tensorflow as tf
+import tensorflow_hub as hub
+from codrone_edu.drone import Drone
+import time
+
+# Load TensorFlow model before drone starts
+print("Loading TensorFlow model...")
+model = hub.load("https://tfhub.dev/tensorflow/efficientdet/lite2/detection/1")
+print("Model loaded successfully!")
+
+# Object labels (COCO dataset)
+labels = {
+    52: "apple",
+    67: "cell phone"
+}
+
+# Open Mac camera
+cap = cv2.VideoCapture(0)
+if not cap.isOpened():
+    print("Error: Could not access Mac camera.")
+    exit()
+
+# Initialize and pair with the drone AFTER model loads
+drone = Drone()
+drone.pair()
+print("Drone paired!")
+
+# Ensure the drone is not already flying
+drone.hover()
+time.sleep(1)  # Give it a second to stabilize
+
+# Take off safely
+print("Taking off...")
+drone.takeoff()
+drone.hover()
+time.sleep(2)  # Wait for 2 seconds before giving new commands
+
+def move_forward():
+    print("Moving forward!")
+    drone.move(1, 0, 0, 0.5)  # Move forward at 50% speed for 0.5s
+    drone.hover()  # Ensure it stops
+
+def move_backward():
+    print("Moving backward!")
+    drone.move(-1, 0, 0, 0.5)  # Move backward at 50% speed for 0.5s
+    drone.hover()  # Ensure it stops
+
+print("Press 'q' to land the drone and exit.")
+
+try:
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            print("Error accessing Mac camera!")
+            break
+
+        # Resize frame for model input and convert to uint8
+        img = cv2.resize(frame, (512, 512))
+        img = np.expand_dims(img, axis=0).astype(np.uint8)  # Convert to uint8
+
+        # Run object detection
+        detections = model.signatures["serving_default"](images=tf.constant(img))
+
+        # Extract detection results
+        detection_classes = np.atleast_1d(detections["output_3"].numpy()[0].astype(int))  # Ensure it's always an array
+        detection_scores = np.atleast_1d(detections["output_2"].numpy()[0])  # Ensure it's always an array
+        detection_boxes = np.atleast_2d(detections["output_0"].numpy()[0])  # Bounding boxes
+
+        detected_objects = set()
+
+        for i in range(len(detection_classes)):
+            class_id = detection_classes[i]
+            confidence = detection_scores[i]
+            box = detection_boxes[i]  # Bounding box coordinates
+
+            if confidence > 0.5:
+                if class_id in labels:
+                    object_name = labels[class_id]
+                    detected_objects.add(object_name)
+                    print(f"Detected: {object_name} with confidence {confidence:.2f}")
+                else:
+                    print(f"Unknown object detected with class ID {class_id} and confidence {confidence:.2f}")
+
+                # Draw bounding box
+                height, width, _ = frame.shape
+                ymin, xmin, ymax, xmax = box
+                xmin, xmax, ymin, ymax = int(xmin * width), int(xmax * width), int(ymin * height), int(ymax * height)
+                cv2.rectangle(frame, (xmin, ymin), (xmax, ymax), (0, 255, 0), 2)
+                label = labels.get(class_id, f"ID {class_id}")
+                cv2.putText(frame, f"{label} {confidence:.2f}", (xmin, ymin - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+
+        # Drone Movement Logic
+        if "apple" in detected_objects:
+            move_forward()
+        elif "cell phone" in detected_objects:
+            move_backward()
+
+        # Display camera feed with bounding boxes
+        cv2.imshow("Mac Camera", frame)
+
+        # Exit on 'q' key press
+        if cv2.waitKey(1) & 0xFF == ord("q"):
+            print("Landing drone...")
+            drone.land()  # Ensure landing
+            break
+
+except Exception as e:
+    print(f"An error occurred: {e}")
+    print("Attempting emergency stop...")
+    drone.emergency_stop()
+
+finally:
+    # Cleanup
+    drone.close()  # Properly close the drone connection
+    cap.release()
+    cv2.destroyAllWindows()
+    print("Program complete.")
+
+
+
+'''import cv2
+import numpy as np
 import tensorflow_hub as hub
 import tensorflow as tf
 from object_detection.utils import visualization_utils as viz_utils
@@ -122,7 +244,7 @@ def main():
 
 if __name__ == '__main__':
     main()
-'''
+
 #this is the chattted code that it gave me | more 'organied' format
 
 import cv2
