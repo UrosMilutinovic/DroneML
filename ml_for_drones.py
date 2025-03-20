@@ -10,7 +10,6 @@ print("Loading TensorFlow model...")
 model = hub.load("https://tfhub.dev/tensorflow/efficientdet/lite2/detection/1")
 print("Model loaded successfully!")
 
-# Full COCO label set (ensure this matches your model's labels)
 coco_labels = {
     1: "person", 2: "bicycle", 3: "car", 4: "motorcycle", 5: "airplane", 6: "bus", 7: "train",
     8: "truck", 9: "boat", 10: "traffic light", 11: "fire hydrant", 13: "stop sign", 14: "parking meter",
@@ -40,24 +39,28 @@ print("Drone paired!")
 drone.hover()
 time.sleep(1)  # Give it a second to stabilize
 
-print("Taking off...")
-drone.takeoff()
-drone.hover()
-time.sleep(2)
+# Drone starts on the ground
+drone_in_air = False
+
+print("Press 'SPACE' to detect objects, 'q' to exit program.")
 
 def move_forward():
     print("Moving forward!")
-    drone.set_pitch(10)
+    drone.set_pitch(50)
     drone.move(1)
     drone.hover()
 
 def move_backward():
     print("Moving backward!") 
-    drone.set_pitch(-10)
+    drone.set_pitch(-50)
     drone.move(1)
     drone.hover()
 
-print("Press 'SPACE' to detect objects, 'q' to land the drone and exit.")
+def rotate():
+    print("rotating")
+    drone.set_yaw(50)
+    drone.move(1)
+    drone.hover()
 
 try:
     while True:
@@ -94,30 +97,59 @@ try:
                 box = detection_boxes[i]
 
                 # Debugging raw detection output
-                print(f"Raw Detection - ID: {class_id}, Confidence: {confidence:.2f}")
+                #print(f"Raw Detection - ID: {class_id}, Confidence: {confidence:.2f}")
 
-                if confidence > 0.5:
-                    object_name = coco_labels.get(class_id, "Unknown")  # Avoid crashes for unknown IDs
-                    print(f"Detected: {object_name} with confidence {confidence:.2f}")
+                # Object recognition based on confidence as index
+                if confidence == 16.0:
+                    object_name = "bird"
+                elif confidence == 13.0:
+                    object_name = "stop sign"
+                elif confidence == 1.0:
+                    object_name = "person"
+                elif confidence == 88.0:
+                    object_name = "teddy bear"
+                elif confidence == 60.0:
+                    object_name= "donut"
+                else:
+                    object_name = "Unknown"
 
-                    if object_name != "Unknown":
-                        detected_objects.add(object_name)
+                if object_name != "Unknown":
+                    #print(f"Detected: {object_name} with confidence {confidence:.2f}")
+                    detected_objects.add(object_name)
 
-                        ymin, xmin, ymax, xmax = box
-                        xmin, xmax, ymin, ymax = int(xmin * width), int(xmax * width), int(ymin * height), int(ymax * height)
-                        cv2.rectangle(frame, (xmin, ymin), (xmax, ymax), (0, 255, 0), 2)
-                        cv2.putText(frame, f"{object_name} {confidence:.2f}", (xmin, ymin - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                    ymin, xmin, ymax, xmax = box
+                    xmin, xmax, ymin, ymax = int(xmin * width), int(xmax * width), int(ymin * height), int(ymax * height)
+                    cv2.rectangle(frame, (xmin, ymin), (xmax, ymax), (0, 255, 0), 2)
+                    cv2.putText(frame, f"{object_name} {confidence:.2f}", (xmin, ymin - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
             # Take action based on detected objects
-            if "apple" in detected_objects:
+            if "bird" in detected_objects and not drone_in_air:
+                print("Bird detected! Taking off...")
+                drone.takeoff()
+                drone.hover()
+                drone_in_air = True
+
+            if "stop sign" in detected_objects:
+                print("Stop sign detected! Landing drone and exiting program.")
+                drone.land()
+                time.sleep(2)
+                break  # Exit program
+
+            if "person" in detected_objects and drone_in_air:
                 move_forward()
-            elif "cell phone" in detected_objects:
+
+            if "teddy bear" in detected_objects and drone_in_air:
                 move_backward()
 
+            if "donut" in detected_objects and drone_in_air:
+                rotate()
+
         elif key == ord("q"):  # Exit when 'q' is pressed
-            print("Landing drone...")
-            drone.land()
-            time.sleep(2)  # Allow time for safe landing
+            print("Exiting program...")
+            if drone_in_air:
+                print("Landing drone...")
+                drone.land()
+                time.sleep(2)  # Allow time for safe landing
             break
 
 except Exception as e:
